@@ -1,0 +1,14 @@
+# Include documentation and license
+include README.md
+include LICENSE
+
+# Include data folder structure
+graft data
+
+# Exclude test files from distribution
+prune test
+
+# Exclude build artifacts
+global-exclude __pycache__
+global-exclude *.py[co]
+global-exclude .DS_Store
