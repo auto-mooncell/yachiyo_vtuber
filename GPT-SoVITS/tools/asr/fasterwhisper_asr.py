@@ -40,6 +40,29 @@ language_code_list = [
 
 
 def download_model(model_size: str):
+    local_candidates = []
+    if "distil" in model_size:
+        if "3.5" in model_size:
+            local_candidates.append("tools/asr/models/faster-distil-whisper-large-v3.5")
+        else:
+            local_candidates.append(
+                "tools/asr/models/{}".format(
+                    "faster-{}-whisper-{}".format(*model_size.split("-", maxsplit=1))
+                    .replace("Systran/", "")
+                    .replace("distil-whisper/", "", 1)
+                )
+            )
+    elif model_size == "large-v3-turbo":
+        local_candidates.append("tools/asr/models/faster-whisper-large-v3-turbo")
+    else:
+        local_candidates.append(f"tools/asr/models/faster-whisper-{model_size}")
+    local_candidates.append(f"tools/asr/models/faster-whisper-{model_size}".replace("whisper-distil", "distil-whisper"))
+
+    for candidate in local_candidates:
+        if os.path.isdir(candidate) and os.path.exists(os.path.join(candidate, "model.bin")):
+            print(f"Using local ASR model: {candidate}")
+            return candidate
+
     url = "https://huggingface.co/api/models/gpt2"
     try:
         requests.get(url, timeout=3)
