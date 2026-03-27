@@ -1,11 +1,33 @@
 import ctypes
 import os
+import sys
+
+
+def _prepend_torch_lib_path():
+    prefixes = []
+    venv = os.environ.get("VIRTUAL_ENV")
+    if venv:
+        prefixes.append(venv)
+    prefixes.extend([sys.prefix, sys.base_prefix])
+
+    seen = set()
+    for prefix in prefixes:
+        if not prefix or prefix in seen:
+            continue
+        seen.add(prefix)
+        torch_lib = os.path.join(prefix, "Lib", "site-packages", "torch", "lib")
+        if os.path.isdir(torch_lib):
+            os.environ["PATH"] = torch_lib + os.pathsep + os.environ.get("PATH", "")
+            return
+
+
+_prepend_torch_lib_path()
+
 import subprocess
 import threading
 
 import wx
 import json
-import sys
 
 ctypes.windll.shcore.SetProcessDpiAwareness(1)
 p = None
@@ -28,10 +50,31 @@ cache_simplify_quality_map = {
     'Highest': 80,
     'Gaming': 75
 }
+
+def is_nvidia_gpu():
+    try:
+        output = subprocess.check_output(
+            "wmic path Win32_VideoController get Name",
+            shell=True,
+        ).decode('gbk')
+        return "NVIDIA" in output.upper()
+    except Exception:
+        try:
+            output = subprocess.check_output(
+                ["nvidia-smi", "-L"],
+                stderr=subprocess.DEVNULL,
+            ).decode("utf-8", errors="ignore")
+            return "NVIDIA" in output.upper()
+        except Exception:
+            return False
+
+hasTRTSupport = is_nvidia_gpu()
+
 default_arg = {
     'character': 'lambda_00',
     'input': 3,
     'output': 2,
+    'device_id': '1' if hasTRTSupport else '0',
     'ifm': None,
     'osf': '127.0.0.1:11573',
     'min_cutoff': 50,
@@ -370,6 +413,9 @@ class LauncherPanel(wx.Panel):
         self.btnLaunch = wx.Button(self, label="Save && Launch")
         self.btnLaunch.Bind(wx.EVT_BUTTON, self.OnLaunch)
         controlSizer.Add(self.btnLaunch, 0, wx.CENTER | wx.ALL, 10)
+        self.btnDesktopPet = wx.Button(self, label="Launch Desktop Pet")
+        self.btnDesktopPet.Bind(wx.EVT_BUTTON, self.OnDesktopPetLaunch)
+        controlSizer.Add(self.btnDesktopPet, 0, wx.CENTER | wx.ALL, 10)
         # self.btnAdd = wx.Button(self, label="添加") 
         # self.btnAdd.Bind(wx.EVT_BUTTON, self.OnAddWidget) 
         # controlSizer.Add(self.btnAdd, 0, wx.CENTER | wx.ALL, 5) 
@@ -394,8 +440,8 @@ class LauncherPanel(wx.Panel):
                   choices=characterList)
 
         addOption('input', title='Input Device', desc='选择希望使用的面捕数据源',
-                  choices=['iFacialMocap', 'OpenSeeFace', 'OpenCV(Webcam)', 'Mouse Input', 'Debug Input'],
-                  mapping=[0, 4, 1, 3, 2])
+                  choices=['iFacialMocap', 'OpenSeeFace', 'OpenCV(Webcam)', 'Mouse Input', 'Debug Input', 'Text Input', 'Mouth Scan'],
+                  mapping=[0, 4, 1, 3, 2, 5, 6])
         addOption('ifm', title='iFacialMocap IP', desc='输入iFacialMocap连接使用的IP地址，默认连接 49983 端口', type=2)
         addOption('is_eyebrow', title='Eyebrow', desc='使用眉毛输入，对性能有一定影响', type=1,
                   default=True)
@@ -416,8 +462,12 @@ class LauncherPanel(wx.Panel):
                   mapping=['inf', '3.0', '5.0', '7.0'])
 
         addOption('output', title='Output', desc='选择输出目标',
-                  choices=['Spout2', 'OBS VirtualCam', 'Debug Output'],
-                  mapping=[0, 1, 2])
+                  choices=['Spout2', 'OBS VirtualCam', 'Debug Output', 'Desktop Pet'],
+                  mapping=[0, 1, 2, 3])
+
+        addOption('device_id', title='GPU Device ID',
+                  desc='DirectML/TensorRT 使用的 GPU 编号。\n双显卡机器通常 0=Intel, 1=NVIDIA。',
+                  choices=['0', '1', '2', '3', '4'])
 
         addOption('use_tensorrt', title='TensorRT加速',
                   desc='需要更长启动和预热时间（仅NVIDIA显卡支持）',
@@ -664,6 +714,11 @@ class LauncherPanel(wx.Panel):
                 if len(args['osf']):
                     run_args.append('--osf_input')
                     run_args.append(args['osf'])
+            elif args['input'] == 5:
+                run_args.append('--text_input')
+            elif args['input'] == 6:
+                run_args.append('--text_input')
+                run_args.append('--mouth_scan')
 
             # Add breath cycle option
             if args['breath_cycle']:
@@ -676,6 +731,8 @@ class LauncherPanel(wx.Panel):
                 run_args.append('--output_virtual_cam')
             elif args['output'] == 2:
                 run_args.append('--output_debug')
+            elif args['output'] == 3:
+                run_args.append('--output_desktop_pet')
 
             if args['is_alpha_split']:
                 run_args.append('--alpha_split')
@@ -760,6 +817,8 @@ class LauncherPanel(wx.Panel):
             self.main_stderr_lines.clear()
             self.statusCtrl.SetValue('Launched')
             on_line = lambda line: _on_main_log_line(self, line)
+            child_env = os.environ.copy()
+            child_env['EZVTB_DEVICE_ID'] = str(args.get('device_id') or '0')
             # 使用CREATE_NO_WINDOW标志隐藏控制台窗口，但仍可捕获输出
             creation_flags = 0
             if sys.platform == 'win32':
@@ -769,6 +828,7 @@ class LauncherPanel(wx.Panel):
                 run_args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                env=child_env,
                 creationflags=creation_flags,
             )
             threading.Thread(
@@ -782,6 +842,15 @@ class LauncherPanel(wx.Panel):
                 daemon=True,
             ).start()
             self.btnLaunch.SetLabelText('Stop')
+
+    def OnDesktopPetLaunch(self, e):
+        output_option = self.optionDict.get('output')
+        if output_option is not None:
+            try:
+                output_option.control.SetSelection(output_option.mapping.index(3))
+            except Exception:
+                pass
+        self.OnLaunch(e)
 
 
 class MainFrame(wx.Frame):

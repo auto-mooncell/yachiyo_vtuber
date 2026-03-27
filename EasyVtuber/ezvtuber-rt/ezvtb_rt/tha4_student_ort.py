@@ -4,7 +4,7 @@ Two-stage inference architecture with DirectML GPU acceleration
 import os
 import onnxruntime as ort
 import numpy as np
-from ezvtb_rt.ort_utils import createORTSession
+from ezvtb_rt.ort_utils import createORTSession, get_ort_runtime
 
 class THA4StudentORTSessions:
     """THA4 Student Model ONNX Runtime implementation with DirectML GPU support
@@ -32,17 +32,11 @@ class THA4StudentORTSessions:
         self.model_dir = model_dir
         self.device_id = device_id
         self.dtype = np.float32  # Student model is FP32 only
-        self.device = 'cuda'
+        runtime = get_ort_runtime(device_id)
+        self.provider = runtime["provider"]
+        self.device = runtime["device"]
         
-        # Check for DirectML support
-        available_providers = ort.get_available_providers()
-        if 'DmlExecutionProvider' not in available_providers:
-            raise ValueError(
-                'DirectML not available. Available providers: ' +
-                str(available_providers)
-            )
-        
-        print('THA4 Student Model using DmlExecutionProvider')
+        print(f'THA4 Student Model using {self.provider}')
         
         # Load Face Morpher session (pose only -> 128x128 face)
         face_morpher_path = os.path.join(model_dir, 'face_morpher.onnx')

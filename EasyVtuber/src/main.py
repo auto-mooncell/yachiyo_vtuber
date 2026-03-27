@@ -11,6 +11,7 @@ from PIL import Image
 from .utils.fps import FPS
 import pyvirtualcam
 from OpenGL.GL import GL_RGBA
+from .desktop_pet_window import DesktopPetWindow
 
 
 def main():
@@ -45,6 +46,9 @@ def main():
     if args.cam_input:
         from .face_mesh_client import FaceMeshClientProcess
         input_process = FaceMeshClientProcess(pose_position_shm)
+    elif args.text_input:
+        from .text_input_client import TextInputClientProcess
+        input_process = TextInputClientProcess(pose_position_shm)
     elif args.ifm_input is not None:
         from .i_facial_mocap_client import IFMClientProcess
         input_process = IFMClientProcess(pose_position_shm)
@@ -94,6 +98,12 @@ def main():
         from PySpout import SpoutSender
         spout_sender = SpoutSender("EasyVtuber", cam_width_scale * args.model_output_size,
                                    args.model_output_size, GL_RGBA)
+    elif args.output_desktop_pet:
+        desktop_pet = DesktopPetWindow(
+            width=cam_width_scale * args.model_output_size,
+            height=args.model_output_size,
+        )
+        print("Using desktop pet window output. Drag with left mouse, close with right click or Esc.")
     else:
         print("Using OpenCV windows for output display.")
 
@@ -131,6 +141,9 @@ def main():
                 virtual_cam.send(np_ret_shms[i])
             elif args.output_spout2:
                 spout_sender.send_image(np_ret_shms[i], False)
+            elif args.output_desktop_pet:
+                if not desktop_pet.update(np_ret_shms[i]):
+                    return
             else:
                 cv2.imshow("EasyVtuber Debug Frame", np_ret_shms[i])
                 cv2.waitKey(1)

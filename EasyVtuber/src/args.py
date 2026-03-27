@@ -18,6 +18,9 @@ parser.add_argument('--character', type=str, default='lambda_00')
 parser.add_argument('--debug_input', action='store_true')
 parser.add_argument('--cam_input', action='store_true')
 parser.add_argument('--mouse_input', type=str)
+parser.add_argument('--text_input', action='store_true')
+parser.add_argument('--text_input_test', action='store_true')
+parser.add_argument('--mouth_scan', action='store_true')
 parser.add_argument('--ifm_input', type=str)
 parser.add_argument('--osf_input', type=str)
 
@@ -30,6 +33,7 @@ parser.add_argument('--breath_cycle', type=float, default=float('inf'))
 parser.add_argument('--output_virtual_cam', action='store_true')
 parser.add_argument('--output_spout2', action='store_true')
 parser.add_argument('--output_debug', action='store_true')
+parser.add_argument('--output_desktop_pet', action='store_true')
 
 parser.add_argument('--alpha_split', action='store_true')
 parser.add_argument('--bongo', action='store_true')
@@ -78,13 +82,16 @@ else:
 if args.simplify == 0:
     args.max_ram_cache_len = 0 # Disable cacher if simplify is Off
 
-if not args.output_virtual_cam and not args.output_spout2: 
+if not args.output_virtual_cam and not args.output_spout2 and not args.output_desktop_pet:
     args.output_debug = True # Default to debug output
 
 if args.output_spout2:
     args.alpha_split = False  # Disable alpha split for spout2 output
 
-if not args.cam_input and args.mouse_input is None \
+if args.output_desktop_pet:
+    args.alpha_split = False  # Desktop pet mode keeps the original alpha for transparent display
+
+if not args.cam_input and args.mouse_input is None and not args.text_input \
     and args.ifm_input is None and args.osf_input is None:
     args.debug_input = True  # Default to debug input
 

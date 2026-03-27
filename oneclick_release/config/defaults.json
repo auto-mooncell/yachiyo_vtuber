@@ -1,0 +1,30 @@
+{
+  "gpt_sovits": {
+    "mode": "local",
+    "version": "v2Pro",
+    "language": "ja",
+    "gpu": "0",
+    "asr_model_size": "large-v3",
+    "asr_precision": "float16",
+    "api_host": "127.0.0.1",
+    "api_port": 9880,
+    "remote_api_base": "https://example.com",
+    "manage_remote_weights": true
+  },
+  "easyvtuber": {
+    "device_id": "1",
+    "output_mode": "desktop_pet",
+    "use_sr": true,
+    "sr_half": true,
+    "frame_rate_limit": "60",
+    "filter_min_cutoff": "25.0",
+    "filter_beta": "0.64",
+    "cache": "2gb",
+    "gpu_cache": "2gb",
+    "character_image_ext": ".png"
+  },
+  "bridge": {
+    "text_lang": "ja",
+    "llm": true
+  }
+}

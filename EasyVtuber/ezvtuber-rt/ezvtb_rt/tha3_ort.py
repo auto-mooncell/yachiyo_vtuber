@@ -3,7 +3,7 @@ import onnxruntime as ort
 import onnx
 import numpy as np
 from typing import List
-from ezvtb_rt.ort_utils import createORTSession
+from ezvtb_rt.ort_utils import createORTSession, get_ort_runtime
 
 class THA3ORTSessions:
     def __init__(self, tha_dir:str, use_eyebrow:bool = True):
@@ -17,7 +17,10 @@ class THA3ORTSessions:
             self.seperable = True
         else:
             self.seperable = False 
-        self.device = 'cuda'
+        runtime = get_ort_runtime()
+        self.provider = runtime["provider"]
+        self.device = runtime["device"]
+        print('Using THA3 ORT with EP:', self.provider)
         self.use_eyebrow = use_eyebrow
         if use_eyebrow:
             self.decomposed_background_layer =  ort.OrtValue.ortvalue_from_shape_and_type((1,4,128,128), self.dtype, self.device)

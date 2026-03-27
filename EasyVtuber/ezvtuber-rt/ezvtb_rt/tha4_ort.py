@@ -6,7 +6,7 @@ import onnxruntime as ort
 import onnx
 import numpy as np
 from typing import List
-from ezvtb_rt.ort_utils import createORTSession
+from ezvtb_rt.ort_utils import createORTSession, get_ort_runtime
 
 
 
@@ -29,8 +29,9 @@ class THA4ORTSessions:
         else:
             self.dtype = np.float32
         
-        self.provider = 'DmlExecutionProvider'
-        self.device = 'cuda'
+        runtime = get_ort_runtime()
+        self.provider = runtime["provider"]
+        self.device = runtime["device"]
         
         print('Using THA4 ORT with EP:', self.provider)
         
