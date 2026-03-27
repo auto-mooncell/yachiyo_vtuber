@@ -6,6 +6,7 @@ Thumbs.db
 __pycache__/
 
 .vscode/
+_gh_snapshot_test/
 datasets/
 _BACKUP_*/
 
@@ -14,6 +15,12 @@ EasyVtuber/src/mouth.txt
 EasyVtuber/text_input.txt
 EasyVtuber/text_motion.json
 EasyVtuber/mouth_scan_preview.png
+EasyVtuber/00*.url
+EasyVtuber/01*.bat
+EasyVtuber/PerformanceTest.md
+EasyVtuber/launcher.py
+EasyVtuber/pack_release.bat
+EasyVtuber/ezvtuber-rt/test/
 
 oneclick_release/data/output/
 oneclick_release/data/working/
@@ -43,3 +50,12 @@ GPT-SoVITS*/tools/asr/models/
 GPT-SoVITS*/tools/uvr5/uvr5_weights/
 GPT-SoVITS*/tools/AP_BWE_main/24kto48k/g_24kto48k.zip
 GPT-SoVITS*/GPT_SoVITS/BigVGAN/demo/examples/
+GPT-SoVITS*/GPT_SoVITS/BigVGAN/demo/
+GPT-SoVITS*/GPT_SoVITS/BigVGAN/tests/
+GPT-SoVITS*/GPT_SoVITS/inference_gui.py
+GPT-SoVITS*/GPT_SoVITS/inference_webui.py
+GPT-SoVITS*/GPT_SoVITS/inference_webui_fast.py
+GPT-SoVITS*/batch_inference.py
+GPT-SoVITS*/go-webui.bat
+GPT-SoVITS*/go-webui.ps1
+GPT-SoVITS*/webui.py

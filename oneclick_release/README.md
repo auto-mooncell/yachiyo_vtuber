@@ -59,6 +59,41 @@ This will:
 - start EasyVtuber with fixed text-input settings
 - optionally start the interactive bridge in the current console
 
+## Actual Default Model Usage
+
+The current minimal release defaults are:
+
+- GPT-SoVITS version: `v2Pro`
+- EasyVtuber output mode: `desktop_pet`
+- EasyVtuber model version: `v3`
+- interpolation: enabled, scale `4`, half precision
+- super-resolution: enabled, half precision
+
+Important detail: the current launch path does **not** pass:
+
+- `--use_tensorrt`
+- `--model_half`
+- `--model_seperable`
+- `--sr_x4`
+
+So the actual default EasyVtuber dependency is:
+
+- `data/models/tha3/standard/fp32/*`
+- `data/models/rife/rife_x2_fp16.onnx`
+- `data/models/rife/rife_x3_fp16.onnx`
+- `data/models/rife/rife_x4_fp16.onnx`
+- `data/models/waifu2x/noise0_scale2x_fp16.onnx`
+
+And the actual default GPT-SoVITS dependency is the `v2Pro` training/inference path:
+
+- `GPT_SoVITS/pretrained_models/s1v3.ckpt`
+- `GPT_SoVITS/pretrained_models/v2Pro/s2Gv2Pro.pth`
+- `GPT_SoVITS/pretrained_models/v2Pro/s2Dv2Pro.pth`
+- `GPT_SoVITS/pretrained_models/sv/pretrained_eres2netv2w24s4ep4.ckpt`
+- `GPT_SoVITS/pretrained_models/chinese-hubert-base/*`
+- `GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large/*`
+- `GPT_SoVITS/pretrained_models/fast_langdetect/lid.176.bin`
+
 ## Local And Remote Modes
 
 `config/defaults.json` now supports two GPT-SoVITS modes:
