@@ -3,7 +3,7 @@
 This directory is a thin release layer on top of the existing:
 
 - `EasyVtuber`
-- `GPT-SoVITS-v2pro-20250604`
+- `GPT-SoVITS`
 
 It does not duplicate the two base projects. Instead, it provides:
 
@@ -100,3 +100,12 @@ Only the GPT-SoVITS API is moved off-machine.
 - reference selection now requires existing audio, non-empty text, and a duration between 3 and 10 seconds
 - this layer assumes the base repos stay in the current workspace layout
 - training is still local for now; remote mode currently covers inference only
+
+## Base Folder Name
+
+The release layer now auto-detects either of these workspace folder names:
+
+- `GPT-SoVITS`
+- `GPT-SoVITS-v2pro-20250604`
+
+For GitHub release and long-term maintenance, `GPT-SoVITS` is the recommended name.

@@ -16,7 +16,6 @@ from pathlib import Path
 
 RELEASE_ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_ROOT = RELEASE_ROOT.parent
-GPT_ROOT = WORKSPACE_ROOT / "GPT-SoVITS-v2pro-20250604"
 EASY_ROOT = WORKSPACE_ROOT / "EasyVtuber"
 CONFIG_PATH = RELEASE_ROOT / "config" / "defaults.json"
 SESSION_PATH = RELEASE_ROOT / "data" / "output" / "current_session.json"
@@ -30,6 +29,20 @@ REFERENCE_MAX_SECONDS = 10.0
 
 CREATE_NEW_CONSOLE = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
 LOCAL_TEXT_ENCODING = locale.getpreferredencoding(False) or "utf-8"
+
+
+def resolve_gpt_root():
+    candidates = [
+        WORKSPACE_ROOT / "GPT-SoVITS",
+        WORKSPACE_ROOT / "GPT-SoVITS-v2pro-20250604",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
+
+
+GPT_ROOT = resolve_gpt_root()
 
 
 def load_config():
@@ -232,14 +245,25 @@ def copy_character_image(character_name):
     return target_path
 
 
+def resolve_python_executable(preferred_path, windowless=False):
+    if preferred_path.exists():
+        return preferred_path
+    current_python = Path(sys.executable)
+    if windowless:
+        pythonw_candidate = current_python.with_name("pythonw.exe")
+        if pythonw_candidate.exists():
+            return pythonw_candidate
+    return current_python
+
+
 def build_runtime_python(windowless=False):
     name = "pythonw.exe" if windowless else "python.exe"
-    return GPT_ROOT / "runtime" / name
+    return resolve_python_executable(GPT_ROOT / "runtime" / name, windowless=windowless)
 
 
 def build_easy_python(windowless=False):
     name = "pythonw.exe" if windowless else "python.exe"
-    return EASY_ROOT / ".venv" / "Scripts" / name
+    return resolve_python_executable(EASY_ROOT / ".venv" / "Scripts" / name, windowless=windowless)
 
 
 def slice_and_asr(character_name, cfg):

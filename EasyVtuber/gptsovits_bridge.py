@@ -33,6 +33,17 @@ def clean_env_value(value):
     return value.strip().strip('"').strip("'")
 
 
+def resolve_gpt_root():
+    candidates = [
+        os.path.join(PROJECT_ROOT, "..", "GPT-SoVITS"),
+        os.path.join(PROJECT_ROOT, "..", "GPT-SoVITS-v2pro-20250604"),
+    ]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+    return candidates[0]
+
+
 def load_character_prompt(character_name):
     default_prompt = (
         "You are a roleplay assistant for a VTuber character. "
@@ -166,7 +177,7 @@ def write_motion(state, motion_path, mouth_path):
 
 def auto_resolve_ref():
     """Try to find Yachiyo/弥千世 files first, then fallback to the first .wav in default dir."""
-    search_dir = os.path.join(PROJECT_ROOT, "..", "GPT-SoVITS-v2pro-20250604", "GPT_weights_v2Pro")
+    search_dir = os.path.join(resolve_gpt_root(), "GPT_weights_v2Pro")
     if not os.path.exists(search_dir):
         return None, "", "zh"
 

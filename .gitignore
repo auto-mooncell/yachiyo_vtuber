@@ -22,23 +22,24 @@ oneclick_release/data/input/audio/*
 oneclick_release/data/input/image/*
 !oneclick_release/data/input/image/.gitkeep
 
-GPT-SoVITS-v2pro-20250604/output/
-GPT-SoVITS-v2pro-20250604/logs/
-GPT-SoVITS-v2pro-20250604/tmp/
-GPT-SoVITS-v2pro-20250604/TEMP/
-GPT-SoVITS-v2pro-20250604/GPT_weights_v2*/
-GPT-SoVITS-v2pro-20250604/SoVITS_weights_v2*/
-GPT-SoVITS-v2pro-20250604/*.pth
-GPT-SoVITS-v2pro-20250604/*.ckpt
-GPT-SoVITS-v2pro-20250604/*.wav
-GPT-SoVITS-v2pro-20250604/*.WAV
-GPT-SoVITS-v2pro-20250604/**/__pycache__/
-GPT-SoVITS-v2pro-20250604/**/*.pyc
+GPT-SoVITS*/output/
+GPT-SoVITS*/logs/
+GPT-SoVITS*/tmp/
+GPT-SoVITS*/TEMP/
+GPT-SoVITS*/GPT_weights_v2*/
+GPT-SoVITS*/SoVITS_weights_v2*/
+GPT-SoVITS*/*.pth
+GPT-SoVITS*/*.ckpt
+GPT-SoVITS*/*.wav
+GPT-SoVITS*/*.WAV
+GPT-SoVITS*/**/__pycache__/
+GPT-SoVITS*/**/*.pyc
 
-GPT-SoVITS-v2pro-20250604/runtime/*
-!GPT-SoVITS-v2pro-20250604/runtime/sitecustomize.py
+GPT-SoVITS*/runtime/*
+!GPT-SoVITS*/runtime/sitecustomize.py
 
-GPT-SoVITS-v2pro-20250604/tools/**/__pycache__/
-GPT-SoVITS-v2pro-20250604/tools/asr/models/
-GPT-SoVITS-v2pro-20250604/tools/uvr5/uvr5_weights/
-GPT-SoVITS-v2pro-20250604/tools/AP_BWE_main/24kto48k/g_24kto48k.zip
+GPT-SoVITS*/tools/**/__pycache__/
+GPT-SoVITS*/tools/asr/models/
+GPT-SoVITS*/tools/uvr5/uvr5_weights/
+GPT-SoVITS*/tools/AP_BWE_main/24kto48k/g_24kto48k.zip
+GPT-SoVITS*/GPT_SoVITS/BigVGAN/demo/examples/
