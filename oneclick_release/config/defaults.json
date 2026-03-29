@@ -26,5 +26,13 @@
   "bridge": {
     "text_lang": "ja",
     "llm": true
+  },
+  "training": {
+    "s2_batch_size": 4,
+    "s2_epochs": 8,
+    "s2_save_every_epoch": 4,
+    "s1_batch_size": 1,
+    "s1_epochs": 15,
+    "s1_save_every_n_epoch": 5
   }
 }

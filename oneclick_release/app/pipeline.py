@@ -22,10 +22,12 @@ SESSION_PATH = RELEASE_ROOT / "data" / "output" / "current_session.json"
 LOG_DIR = RELEASE_ROOT / "data" / "output" / "logs"
 PID_PATH = RELEASE_ROOT / "data" / "output" / "pids.json"
 LIST_DIR = RELEASE_ROOT / "data" / "working" / "lists"
+CLEAN_AUDIO_DIR = RELEASE_ROOT / "data" / "working" / "clean_audio"
 IMAGE_INPUT_DIR = RELEASE_ROOT / "data" / "input" / "image"
 AUDIO_INPUT_DIR = RELEASE_ROOT / "data" / "input" / "audio"
 REFERENCE_MIN_SECONDS = 3.0
 REFERENCE_MAX_SECONDS = 10.0
+SUPPORTED_LANGUAGES = {"ja", "zh", "en", "yue", "auto"}
 
 CREATE_NEW_CONSOLE = getattr(subprocess, "CREATE_NEW_CONSOLE", 0)
 LOCAL_TEXT_ENCODING = locale.getpreferredencoding(False) or "utf-8"
@@ -45,8 +47,24 @@ def resolve_gpt_root():
 GPT_ROOT = resolve_gpt_root()
 
 
+def known_gpt_roots():
+    roots = [GPT_ROOT, WORKSPACE_ROOT / "GPT-SoVITS", WORKSPACE_ROOT / "GPT-SoVITS-v2pro-20250604"]
+    unique = []
+    seen = set()
+    for root in roots:
+        key = str(root).lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(root)
+    return unique
+
+
 def load_config():
     return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+
+
+def clone_config(cfg):
+    return json.loads(json.dumps(cfg))
 
 
 def gpt_mode(cfg):
@@ -91,6 +109,31 @@ def load_pids():
     if not PID_PATH.exists():
         return {}
     return json.loads(PID_PATH.read_text(encoding="utf-8"))
+
+
+def remap_to_current_gpt_root(path_value):
+    if not path_value:
+        return path_value
+    raw_path = Path(path_value)
+    candidate = raw_path
+    if not raw_path.is_absolute():
+        candidate = (GPT_ROOT / raw_path).resolve()
+        return str(candidate)
+    for root in known_gpt_roots():
+        try:
+            relative = raw_path.relative_to(root)
+        except ValueError:
+            continue
+        return str((GPT_ROOT / relative).resolve())
+    return str(raw_path)
+
+
+def normalize_session_paths(session):
+    normalized = dict(session)
+    for key in ("list_path", "gpt_weights", "sovits_weights", "reference_audio"):
+        if key in normalized:
+            normalized[key] = remap_to_current_gpt_root(normalized[key])
+    return normalized
 
 
 def save_pids(data):
@@ -212,6 +255,33 @@ def ensure_exists(path, label):
         raise FileNotFoundError(f"{label} not found: {path}")
 
 
+def normalize_language(value, fallback=None):
+    if value is None:
+        return fallback
+    normalized = str(value).strip().lower().replace("_", "-")
+    aliases = {
+        "jp": "ja",
+        "jpn": "ja",
+        "cn": "zh",
+        "zh-cn": "zh",
+        "zh-hans": "zh",
+        "zh-tw": "zh",
+        "zh-hant": "zh",
+    }
+    normalized = aliases.get(normalized, normalized)
+    if normalized in SUPPORTED_LANGUAGES:
+        return normalized
+    return fallback
+
+
+def config_with_language(cfg, language):
+    updated = clone_config(cfg)
+    if language:
+        updated["gpt_sovits"]["language"] = language
+        updated["bridge"]["text_lang"] = language
+    return updated
+
+
 def find_single_file(directory, extensions):
     ensure_exists(directory, "Input directory")
     matches = []
@@ -226,6 +296,30 @@ def find_single_file(directory, extensions):
     return matches[0]
 
 
+def find_character_input_file(directory, character_name, extensions, label):
+    ensure_exists(directory, "Input directory")
+    matches = [item for item in directory.iterdir() if item.is_file() and item.suffix.lower() in extensions]
+    if not matches:
+        raise FileNotFoundError(f"No matching {label} files in {directory}")
+    exact_match = directory / f"{character_name}{next(iter(sorted(extensions)))}"
+    normalized_character = character_name.casefold()
+    same_stem_matches = [item for item in matches if item.stem.casefold() == normalized_character]
+    if same_stem_matches:
+        same_stem_matches.sort(key=lambda item: item.stat().st_mtime, reverse=True)
+        return same_stem_matches[0]
+    if len(matches) == 1:
+        return matches[0]
+    available = ", ".join(sorted(item.name for item in matches))
+    raise FileNotFoundError(
+        f"Multiple {label} files found in {directory}, but none match character '{character_name}'. "
+        f"Rename the desired file to '{character_name}<ext>' or keep only one file. Available: {available}"
+    )
+
+
+def should_remove_bg(args):
+    return bool(getattr(args, "remove_bg", False) or getattr(args, "remove", None) == "bg")
+
+
 def choose_character_name(args):
     if args.character:
         return args.character
@@ -234,11 +328,7 @@ def choose_character_name(args):
 
 
 def copy_character_image(character_name):
-    exact_match = IMAGE_INPUT_DIR / f"{character_name}.png"
-    if exact_match.exists():
-        image_path = exact_match
-    else:
-        image_path = find_single_file(IMAGE_INPUT_DIR, {".png"})
+    image_path = find_character_input_file(IMAGE_INPUT_DIR, character_name, {".png"}, "image")
     target_path = EASY_ROOT / "data" / "images" / f"{character_name}.png"
     shutil.copyfile(image_path, target_path)
     print(f"Character image installed: {target_path}")
@@ -266,12 +356,66 @@ def build_easy_python(windowless=False):
     return resolve_python_executable(EASY_ROOT / ".venv" / "Scripts" / name, windowless=windowless)
 
 
-def slice_and_asr(character_name, cfg):
-    audio_path = find_single_file(AUDIO_INPUT_DIR, {".wav", ".mp3", ".flac", ".m4a", ".ogg"})
+def remove_background_audio(character_name, audio_path):
+    runtime_python = build_runtime_python()
+    ensure_exists(runtime_python, "GPT-SoVITS runtime python")
+    CLEAN_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+    cleaned_path = CLEAN_AUDIO_DIR / f"{character_name}_clean.wav"
+    run_checked(
+        [
+            str(runtime_python),
+            "tools/remove_bg.py",
+            "--input",
+            str(audio_path),
+            "--output",
+            str(cleaned_path),
+        ],
+        GPT_ROOT,
+    )
+    ensure_exists(cleaned_path, "Background-removed audio")
+    return cleaned_path
+
+
+def resolve_training_audio(character_name, args):
+    audio_path = find_character_input_file(AUDIO_INPUT_DIR, character_name, {".wav", ".mp3", ".flac", ".m4a", ".ogg"}, "audio")
+    if should_remove_bg(args):
+        print(f"Removing background audio before training: {audio_path.name}")
+        return remove_background_audio(character_name, audio_path)
+    return audio_path
+
+
+def find_generated_asr_list(asr_dir, character_name, slicer_dir):
+    candidates = [
+        asr_dir / f"{character_name}.list",
+        asr_dir / f"{slicer_dir.name}.list",
+    ]
+    for path in candidates:
+        if path.exists():
+            return path
+    matches = list(asr_dir.glob("*.list"))
+    if matches:
+        matches.sort(key=lambda item: item.stat().st_mtime, reverse=True)
+        newest = matches[0]
+        if newest.stat().st_mtime >= slicer_dir.stat().st_mtime:
+            return newest
+    return candidates[0]
+
+
+def slice_and_asr(character_name, cfg, audio_path=None):
+    if audio_path is None:
+        audio_path = find_character_input_file(
+            AUDIO_INPUT_DIR, character_name, {".wav", ".mp3", ".flac", ".m4a", ".ogg"}, "audio"
+        )
     slicer_dir = GPT_ROOT / "output" / "slicer_opt" / character_name
     asr_dir = GPT_ROOT / "output" / "asr_opt"
     runtime_python = build_runtime_python()
     ensure_exists(runtime_python, "GPT-SoVITS runtime python")
+
+    if slicer_dir.exists():
+        shutil.rmtree(slicer_dir)
+    stale_asr_list = asr_dir / f"{character_name}.list"
+    if stale_asr_list.exists():
+        stale_asr_list.unlink()
 
     run_checked(
         [
@@ -322,9 +466,19 @@ def slice_and_asr(character_name, cfg):
             "-s",
             cfg["gpt_sovits"]["asr_model_size"],
         ]
-    run_checked(command, GPT_ROOT)
+    try:
+        run_checked(command, GPT_ROOT)
+    except subprocess.CalledProcessError as exc:
+        source_list = find_generated_asr_list(asr_dir, character_name, slicer_dir)
+        if source_list.exists():
+            print(
+                "ASR process returned a non-zero exit code, but the list file was already generated. "
+                f"Continuing with: {source_list}"
+            )
+        else:
+            raise exc
 
-    source_list = asr_dir / f"{character_name}.list"
+    source_list = find_generated_asr_list(asr_dir, character_name, slicer_dir)
     ensure_exists(source_list, "Generated list")
     LIST_DIR.mkdir(parents=True, exist_ok=True)
     target_list = LIST_DIR / f"{character_name}.list"
@@ -340,6 +494,7 @@ def review_list(list_path):
 
 def train_character(character_name, list_path, cfg):
     runtime_python = build_runtime_python()
+    training_cfg = cfg.get("training", {})
     run_checked(
         [
             str(runtime_python),
@@ -354,6 +509,18 @@ def train_character(character_name, list_path, cfg):
             cfg["gpt_sovits"]["language"],
             "--gpu",
             cfg["gpt_sovits"]["gpu"],
+            "--s2-batch-size",
+            str(training_cfg.get("s2_batch_size", 4)),
+            "--s2-epochs",
+            str(training_cfg.get("s2_epochs", 8)),
+            "--s2-save-every-epoch",
+            str(training_cfg.get("s2_save_every_epoch", 4)),
+            "--s1-batch-size",
+            str(training_cfg.get("s1_batch_size", 1)),
+            "--s1-epochs",
+            str(training_cfg.get("s1_epochs", 15)),
+            "--s1-save-every-n-epoch",
+            str(training_cfg.get("s1_save_every_n_epoch", 5)),
         ],
         GPT_ROOT,
     )    
@@ -432,12 +599,44 @@ def parse_reference_from_list(character_name, list_path):
     )
 
 
-def detect_lang(text):
+def detect_lang(text, preferred=None):
+    preferred = normalize_language(preferred)
     if any("\u3040" <= ch <= "\u30ff" for ch in text):
         return "ja"
     if any("\u4e00" <= ch <= "\u9fff" for ch in text):
+        if preferred in {"zh", "yue"}:
+            return preferred
         return "zh"
     return "en"
+
+
+def infer_language_from_list(list_path, fallback="ja"):
+    scores = {}
+    for line in list_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split("|", 3)
+        if len(parts) != 4:
+            continue
+        list_language = normalize_language(parts[2])
+        prompt_text = parts[3].strip()
+        if list_language and list_language != "auto":
+            scores[list_language] = scores.get(list_language, 0) + 3
+        if prompt_text:
+            detected = detect_lang(prompt_text, preferred=list_language)
+            scores[detected] = scores.get(detected, 0) + 1
+    if not scores:
+        return normalize_language(fallback, "ja")
+    priority = {"yue": 4, "zh": 3, "ja": 2, "en": 1}
+    return max(scores.items(), key=lambda item: (item[1], priority.get(item[0], 0)))[0]
+
+
+def resolve_requested_language(args, cfg):
+    override = normalize_language(getattr(args, "language", None))
+    if override:
+        return override
+    return normalize_language(cfg["gpt_sovits"].get("language"), "ja")
 
 
 def write_session(character_name, list_path, cfg):
@@ -445,6 +644,7 @@ def write_session(character_name, list_path, cfg):
     gpt_weights = find_latest_weight(GPT_ROOT / f"GPT_weights_{version}", f"{character_name}-*.ckpt")
     sovits_weights = find_latest_weight(GPT_ROOT / f"SoVITS_weights_{version}", f"{character_name}_*.pth")
     ref_audio, prompt_text = parse_reference_from_list(character_name, list_path)
+    session_language = normalize_language(cfg["gpt_sovits"].get("language"), "ja")
     session = {
         "character": character_name,
         "list_path": str(list_path),
@@ -452,8 +652,9 @@ def write_session(character_name, list_path, cfg):
         "sovits_weights": str(sovits_weights),
         "reference_audio": str(ref_audio),
         "prompt_text": prompt_text,
-        "prompt_lang": detect_lang(prompt_text),
-        "text_lang": cfg["bridge"]["text_lang"],
+        "prompt_lang": detect_lang(prompt_text, preferred=session_language),
+        "text_lang": normalize_language(cfg["bridge"].get("text_lang"), session_language) or session_language,
+        "language": session_language,
         "version": version,
     }
     SESSION_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -490,7 +691,8 @@ def set_api_weight(cfg, endpoint, weight_path):
     if using_remote_gpt(cfg) and not cfg["gpt_sovits"].get("manage_remote_weights", True):
         print(f"Skipping {endpoint}: remote weight management disabled in config")
         return
-    relative = Path(weight_path).relative_to(GPT_ROOT).as_posix()
+    resolved_weight_path = Path(remap_to_current_gpt_root(weight_path))
+    relative = resolved_weight_path.relative_to(GPT_ROOT).as_posix()
     query = urllib.parse.urlencode({"weights_path": relative})
     url = f"{api_base_url(cfg)}/{endpoint}?{query}"
     with urllib.request.urlopen(url, timeout=30) as response:
@@ -613,7 +815,7 @@ def build_bridge_command(session):
         "--prompt-lang",
         session["prompt_lang"],
         "--text-lang",
-        session["text_lang"],
+        session.get("text_lang", session.get("language", "ja")),
     ]
     if cfg["bridge"].get("llm"):
         command.append("--llm")
@@ -626,30 +828,55 @@ def run_bridge(session):
 
 def cmd_prepare(args, cfg):
     character_name = choose_character_name(args)
+    requested_language = resolve_requested_language(args, cfg)
+    active_cfg = config_with_language(cfg, requested_language)
     copy_character_image(character_name)
-    list_path = slice_and_asr(character_name, cfg)
+    audio_path = resolve_training_audio(character_name, args)
+    list_path = slice_and_asr(character_name, active_cfg, audio_path=audio_path)
+    if requested_language == "auto":
+        detected_language = infer_language_from_list(list_path, fallback=cfg["gpt_sovits"]["language"])
+        print(f"Detected language from ASR output: {detected_language}")
+        active_cfg = config_with_language(cfg, detected_language)
     review_list(list_path)
-    return character_name, list_path
+    return character_name, list_path, active_cfg
 
 
 def cmd_train(args, cfg):
     character_name = choose_character_name(args)
+    if should_remove_bg(args):
+        print("remove-bg requested; regenerating slices/list before training.")
+        character_name, list_path, active_cfg = cmd_prepare(args, cfg)
+        train_character(character_name, list_path, active_cfg)
+        return write_session(character_name, list_path, active_cfg)
     list_path = LIST_DIR / f"{character_name}.list"
     ensure_exists(list_path, "Corrected list")
-    train_character(character_name, list_path, cfg)
-    return write_session(character_name, list_path, cfg)
+    requested_language = resolve_requested_language(args, cfg)
+    active_language = requested_language
+    if requested_language == "auto":
+        active_language = infer_language_from_list(list_path, fallback=cfg["gpt_sovits"]["language"])
+        print(f"Detected language from corrected list: {active_language}")
+    active_cfg = config_with_language(cfg, active_language)
+    train_character(character_name, list_path, active_cfg)
+    return write_session(character_name, list_path, active_cfg)
 
 
 def cmd_full(args, cfg):
-    character_name, list_path = cmd_prepare(args, cfg)
-    train_character(character_name, list_path, cfg)
-    write_session(character_name, list_path, cfg)
+    character_name, list_path, active_cfg = cmd_prepare(args, cfg)
+    train_character(character_name, list_path, active_cfg)
+    write_session(character_name, list_path, active_cfg)
 
 
 def cmd_use(args, cfg):
     character_name = choose_character_name(args)
     list_path = find_character_list(character_name)
-    session = write_session(character_name, list_path, cfg)
+    requested_language = normalize_language(getattr(args, "language", None))
+    if requested_language in {None, "auto"}:
+        active_language = infer_language_from_list(list_path, fallback=cfg["gpt_sovits"]["language"])
+        print(f"Inferred session language for {character_name}: {active_language}")
+    else:
+        active_language = requested_language
+    active_cfg = config_with_language(cfg, active_language)
+    session = write_session(character_name, list_path, active_cfg)
     print(f"Switched current session to: {character_name}")
     return session
 
@@ -657,6 +884,11 @@ def cmd_use(args, cfg):
 def cmd_launch(args, cfg):
     ensure_exists(SESSION_PATH, "Session file")
     session = json.loads(SESSION_PATH.read_text(encoding="utf-8"))
+    normalized_session = normalize_session_paths(session)
+    if normalized_session != session:
+        SESSION_PATH.write_text(json.dumps(normalized_session, ensure_ascii=False, indent=2), encoding="utf-8")
+        session = normalized_session
+        print(f"Normalized session paths to current GPT-SoVITS root: {SESSION_PATH}")
     copy_character_image(session["character"])
     start_api(cfg)
     wait_for_api(cfg)
@@ -686,17 +918,43 @@ def build_parser():
             help="Override the character name. Defaults to the input image stem.",
         )
 
+    def add_language_option(subparser):
+        subparser.add_argument(
+            "--language",
+            choices=sorted(SUPPORTED_LANGUAGES),
+            help="Training/ASR language override. Use auto to infer from ASR output.",
+        )
+
+    def add_remove_option(subparser):
+        subparser.add_argument(
+            "--remove-bg",
+            action="store_true",
+            help="Run background/accompaniment removal before slicing and training.",
+        )
+        subparser.add_argument(
+            "--remove",
+            choices=["bg"],
+            help="Alias for --remove-bg. Example: --remove bg",
+        )
+
     prepare = subparsers.add_parser("prepare", help="Slice audio, ASR it, open the generated list for correction.")
     add_character_option(prepare)
+    add_language_option(prepare)
+    add_remove_option(prepare)
 
     train = subparsers.add_parser("train", help="Train from the corrected list and write session metadata.")
     add_character_option(train)
+    add_language_option(train)
+    add_remove_option(train)
 
     full = subparsers.add_parser("full", help="Prepare, pause for list correction, then train.")
     add_character_option(full)
+    add_language_option(full)
+    add_remove_option(full)
 
     use = subparsers.add_parser("use", help="Switch the current session to an existing trained character.")
     add_character_option(use)
+    add_language_option(use)
 
     launch = subparsers.add_parser("launch", help="Start API, switch weights, start VTuber, optionally enter TTS.")
     add_character_option(launch)
